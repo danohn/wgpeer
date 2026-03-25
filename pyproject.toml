@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "wgpeer"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Manage WireGuard peers on a Debian VPS"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,6 +18,9 @@ dependencies = [
 
 [project.scripts]
 wgpeer = "wgpeer.cli:cli"
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/wgpeer"]
