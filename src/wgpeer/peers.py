@@ -191,6 +191,116 @@ def list_peers() -> None:
     get_console().print(table)
 
 
+def _fmt_bytes(n: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+def _fmt_handshake(ts: int) -> tuple[str, str]:
+    """Return (label, status) for a handshake Unix timestamp."""
+    import time
+
+    if ts == 0:
+        return "never", "offline"
+    age = int(time.time()) - ts
+    if age < 180:
+        status = "online"
+    elif age < 900:
+        status = "idle"
+    else:
+        status = "offline"
+
+    if age < 60:
+        label = f"{age}s ago"
+    elif age < 3600:
+        label = f"{age // 60}m ago"
+    elif age < 86400:
+        label = f"{age // 3600}h ago"
+    else:
+        label = f"{age // 86400}d ago"
+    return label, status
+
+
+def peer_status() -> None:
+    """Show live status (handshake, transfer) for all peers."""
+    cfg = load_config()
+    wg_dir = Path(cfg["wg_dir"])
+
+    result = subprocess.run(
+        ["wg", "show", cfg["wg_interface"], "dump"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        rprint("[red]Failed to read WireGuard status.[/red]")
+        raise SystemExit(1)
+
+    lines = result.stdout.splitlines()
+    if not lines:
+        rprint("[yellow]No WireGuard data.[/yellow]")
+        return
+
+    # Parse peers (skip first line = interface row)
+    # Format: pubkey  preshared  endpoint  allowed-ips  handshake-ts  rx  tx  keepalive
+    peers: list[dict] = []
+    for line in lines[1:]:
+        parts = line.split("\t")
+        if len(parts) < 8:
+            continue
+        peers.append(
+            {
+                "pub": parts[0],
+                "endpoint": parts[2],
+                "allowed_ips": parts[3],
+                "handshake_ts": int(parts[4]),
+                "rx": int(parts[5]),
+                "tx": int(parts[6]),
+            }
+        )
+
+    # Build pubkey -> name from conf files
+    pub_to_name: dict[str, str] = {}
+    for conf_file in sorted(wg_dir.glob("*.conf"), key=lambda p: p.stem):
+        if conf_file.stem == cfg["wg_interface"]:
+            continue
+        try:
+            pub = _pubkey_from_conf(conf_file)
+            pub_to_name[pub] = conf_file.stem
+        except SystemExit:
+            pass
+
+    status_style = {"online": "green", "idle": "yellow", "offline": "red"}
+
+    table = Table(title="WireGuard Status")
+    table.add_column("Name", style="cyan")
+    table.add_column("IP", style="magenta")
+    table.add_column("Status")
+    table.add_column("Last Handshake")
+    table.add_column("RX", justify="right")
+    table.add_column("TX", justify="right")
+
+    for peer in sorted(peers, key=lambda p: p["allowed_ips"]):
+        ip = peer["allowed_ips"].split("/")[0]
+        name = pub_to_name.get(peer["pub"], "[dim]no config[/dim]")
+        label, status = _fmt_handshake(peer["handshake_ts"])
+        style = status_style[status]
+        table.add_row(
+            name,
+            ip,
+            f"[{style}]{status}[/{style}]",
+            label,
+            _fmt_bytes(peer["rx"]),
+            _fmt_bytes(peer["tx"]),
+        )
+
+    from rich import get_console
+
+    get_console().print(table)
+
+
 def show_qr(name: str) -> None:
     """Display the QR code for an existing peer config."""
     validate_name(name)

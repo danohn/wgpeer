@@ -7,9 +7,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from wgpeer.peers import (
+    _fmt_bytes,
+    _fmt_handshake,
     _pubkey_from_conf,
     add_peer,
     list_peers,
+    peer_status,
     remove_peer,
     show_qr,
     validate_name,
@@ -313,3 +316,153 @@ class TestShowQr:
     def test_rejects_invalid_name(self):
         with pytest.raises(SystemExit):
             show_qr("bad name!")
+
+
+# Dump format: interface line + peer lines (tab-separated)
+# Interface: pubkey  privkey  listen-port  fwmark
+# Peer:      pubkey  preshared  endpoint  allowed-ips  handshake-ts  rx  tx  keepalive
+SAMPLE_DUMP = (
+    "SERVERPUB\t(none)\t51820\toff\n"
+    "PUBKEYAAA\t(none)\t1.1.1.1:12345\t10.0.0.2/32\t1700000100\t1024\t2048\t25\n"
+    "PUBKEYBBB\t(none)\t2.2.2.2:12345\t10.0.0.3/32\t1700000000\t512\t256\t25\n"
+)
+
+
+class TestFmtBytes:
+    def test_bytes(self):
+        assert _fmt_bytes(512) == "512.0 B"
+
+    def test_kilobytes(self):
+        assert _fmt_bytes(2048) == "2.0 KB"
+
+    def test_megabytes(self):
+        assert _fmt_bytes(1024 * 1024) == "1.0 MB"
+
+    def test_gigabytes(self):
+        assert _fmt_bytes(1024**3) == "1.0 GB"
+
+    def test_terabytes(self):
+        assert _fmt_bytes(1024**4) == "1.0 TB"
+
+
+class TestFmtHandshake:
+    def test_never_when_zero(self):
+        label, status = _fmt_handshake(0)
+        assert label == "never"
+        assert status == "offline"
+
+    def test_online_within_3_minutes(self):
+        import time
+
+        now = int(time.time())
+        _, status = _fmt_handshake(now - 60)
+        assert status == "online"
+
+    def test_idle_between_3_and_15_minutes(self):
+        import time
+
+        now = int(time.time())
+        _, status = _fmt_handshake(now - 300)
+        assert status == "idle"
+
+    def test_offline_after_15_minutes(self):
+        import time
+
+        now = int(time.time())
+        _, status = _fmt_handshake(now - 1000)
+        assert status == "offline"
+
+    def test_label_seconds(self):
+        import time
+
+        now = int(time.time())
+        label, _ = _fmt_handshake(now - 30)
+        assert label.endswith("s ago")
+
+    def test_label_minutes(self):
+        import time
+
+        now = int(time.time())
+        label, _ = _fmt_handshake(now - 300)
+        assert label.endswith("m ago")
+
+    def test_label_hours(self):
+        import time
+
+        now = int(time.time())
+        label, _ = _fmt_handshake(now - 7200)
+        assert label == "2h ago"
+
+    def test_label_days(self):
+        import time
+
+        now = int(time.time())
+        label, _ = _fmt_handshake(now - 172800)
+        assert label == "2d ago"
+
+
+class TestPeerStatus:
+    def test_shows_table(self):
+        proc = make_proc(stdout=SAMPLE_DUMP)
+        alice_conf = MagicMock(stem="alice")
+
+        with (
+            patch("wgpeer.peers.load_config", return_value=SAMPLE_CFG),
+            patch("subprocess.run", return_value=proc),
+            patch("pathlib.Path.glob", return_value=[alice_conf]),
+            patch("wgpeer.peers._pubkey_from_conf", return_value="PUBKEYAAA"),
+            patch("rich.get_console") as mock_console,
+        ):
+            peer_status()
+        mock_console.return_value.print.assert_called_once()
+
+    def test_exits_on_wg_failure(self):
+        proc = make_proc(returncode=1)
+        with (
+            patch("wgpeer.peers.load_config", return_value=SAMPLE_CFG),
+            patch("subprocess.run", return_value=proc),
+        ):
+            with pytest.raises(SystemExit):
+                peer_status()
+
+    def test_peers_without_conf_shown_as_no_config(self):
+        proc = make_proc(stdout=SAMPLE_DUMP)
+
+        with (
+            patch("wgpeer.peers.load_config", return_value=SAMPLE_CFG),
+            patch("subprocess.run", return_value=proc),
+            patch("pathlib.Path.glob", return_value=[]),
+            patch("rich.get_console"),
+            patch("rich.table.Table.add_row") as mock_add_row,
+        ):
+            peer_status()
+        assert any("no config" in str(c) for c in mock_add_row.call_args_list)
+
+    def test_skips_interface_line_in_dump(self):
+        proc = make_proc(stdout=SAMPLE_DUMP)
+
+        with (
+            patch("wgpeer.peers.load_config", return_value=SAMPLE_CFG),
+            patch("subprocess.run", return_value=proc),
+            patch("pathlib.Path.glob", return_value=[]),
+            patch("rich.get_console"),
+            patch("rich.table.Table.add_row") as mock_add_row,
+        ):
+            peer_status()
+        # Should have exactly 2 rows (PUBKEYAAA and PUBKEYBBB), not 3
+        assert mock_add_row.call_count == 2
+
+    def test_displays_transfer_bytes(self):
+        proc = make_proc(stdout=SAMPLE_DUMP)
+
+        with (
+            patch("wgpeer.peers.load_config", return_value=SAMPLE_CFG),
+            patch("subprocess.run", return_value=proc),
+            patch("pathlib.Path.glob", return_value=[]),
+            patch("rich.get_console"),
+            patch("rich.table.Table.add_row") as mock_add_row,
+        ):
+            peer_status()
+        all_args = str(mock_add_row.call_args_list)
+        assert "1.0 KB" in all_args  # rx for PUBKEYAAA = 1024
+        assert "2.0 KB" in all_args  # tx for PUBKEYAAA = 2048

@@ -18,7 +18,7 @@ from wgpeer.config import (
     load_config,
 )
 from wgpeer.keys import gen_keypair, run
-from wgpeer.peers import add_peer, list_peers, remove_peer, show_qr
+from wgpeer.peers import add_peer, list_peers, peer_status, remove_peer, show_qr
 
 
 def _require_root() -> None:
@@ -138,6 +138,14 @@ def list_cmd() -> None:
     _require_root()
     _require_wg()
     list_peers()
+
+
+@cli.command()
+def status() -> None:
+    """Show live status (handshake time, transfer) for all peers."""
+    _require_root()
+    _require_wg()
+    peer_status()
 
 
 @cli.command()
