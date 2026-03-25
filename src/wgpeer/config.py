@@ -44,6 +44,49 @@ def detect_public_ips() -> list[str]:
     return candidates
 
 
+def detect_outbound_iface() -> str | None:
+    """Return the outbound network interface by inspecting the default route."""
+    result = subprocess.run(
+        ["ip", "route", "get", "1.1.1.1"],
+        capture_output=True,
+        text=True,
+    )
+    match = re.search(r"\bdev\s+(\S+)", result.stdout)
+    return match.group(1) if match else None
+
+
+def init_server_config(
+    wg_interface: str,
+    wg_dir: str,
+    subnet: str,
+    port: int,
+    private_key: str,
+    outbound_iface: str,
+    masquerade: bool,
+) -> None:
+    """Write the WireGuard server config (e.g. /etc/wireguard/wg0.conf)."""
+    network = ipaddress.IPv4Network(subnet, strict=False)
+    server_address = str(list(network.hosts())[0])
+
+    pkg_templates = files("wgpeer") / "templates"
+    source = (pkg_templates / "server.conf.j2").read_text(encoding="utf-8")
+    env = Environment(loader=BaseLoader(), keep_trailing_newline=True)
+    tmpl = env.from_string(source)
+    content = tmpl.render(
+        address=server_address,
+        prefix=network.prefixlen,
+        port=port,
+        private_key=private_key,
+        wg_interface=wg_interface,
+        outbound_iface=outbound_iface,
+        masquerade=masquerade,
+    )
+
+    conf_path = Path(wg_dir) / f"{wg_interface}.conf"
+    conf_path.write_text(content)
+    conf_path.chmod(0o600)
+
+
 def init_config(server_ip: str) -> None:
     """Write /etc/wgpeer/config.toml with the given server IP and defaults."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)

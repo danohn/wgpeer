@@ -1,0 +1,8 @@
+[Interface]
+Address = {{ address }}/{{ prefix }}
+ListenPort = {{ port }}
+PrivateKey = {{ private_key }}
+{% if masquerade %}
+PostUp = iptables -A FORWARD -i {{ wg_interface }} -j ACCEPT; iptables -A FORWARD -o {{ wg_interface }} -j ACCEPT; iptables -t nat -A POSTROUTING -o {{ outbound_iface }} -j MASQUERADE
+PostDown = iptables -D FORWARD -i {{ wg_interface }} -j ACCEPT; iptables -D FORWARD -o {{ wg_interface }} -j ACCEPT; iptables -t nat -D POSTROUTING -o {{ outbound_iface }} -j MASQUERADE
+{% endif %}

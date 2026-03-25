@@ -9,7 +9,15 @@ import sys
 import click
 from rich import print as rprint
 
-from wgpeer.config import CONFIG_PATH, detect_public_ips, init_config
+from wgpeer.config import (
+    CONFIG_PATH,
+    detect_outbound_iface,
+    detect_public_ips,
+    init_config,
+    init_server_config,
+    load_config,
+)
+from wgpeer.keys import gen_keypair, run
 from wgpeer.peers import add_peer, list_peers, remove_peer, show_qr
 
 
@@ -32,9 +40,10 @@ def cli() -> None:
 
 @cli.command()
 def init() -> None:
-    """Create /etc/wgpeer/config.toml, detecting or prompting for the server IP."""
+    """Set up wgpeer: create config.toml and optionally the WireGuard server config."""
     _require_root()
 
+    # --- Step 1: config.toml ---
     if CONFIG_PATH.exists():
         click.confirm(f"{CONFIG_PATH} already exists. Overwrite?", abort=True)
 
@@ -49,6 +58,60 @@ def init() -> None:
 
     init_config(server_ip)
     rprint(f"[green]Config written to {CONFIG_PATH}.[/green]")
+
+    # --- Step 2: wg0.conf ---
+    cfg = load_config()
+    wg_interface = cfg["wg_interface"]
+    wg_dir = cfg["wg_dir"]
+    server_conf = os.path.join(wg_dir, f"{wg_interface}.conf")
+
+    if os.path.exists(server_conf):
+        rprint(f"[dim]{server_conf} already exists, skipping.[/dim]")
+        return
+
+    if not click.confirm(f"\n{server_conf} not found. Create it now?", default=True):
+        return
+
+    # Detect outbound interface
+    detected_iface = detect_outbound_iface()
+    if detected_iface:
+        rprint(f"Detected outbound interface: [cyan]{detected_iface}[/cyan]")
+        outbound_iface = click.prompt(
+            "Outbound network interface", default=detected_iface
+        )
+    else:
+        rprint("[yellow]Could not detect outbound interface.[/yellow]")
+        outbound_iface = click.prompt(
+            "Enter your outbound network interface (e.g. eth0)"
+        )
+
+    # Masquerade explanation and prompt
+    rprint(
+        "\n[bold]IP Masquerade (NAT)[/bold] allows connected peers to route all their "
+        "internet traffic through this server, acting as a traditional VPN. "
+        "Without it, peers can only reach other devices on the WireGuard subnet."
+    )
+    masquerade = click.confirm("Enable IP masquerade?", default=True)
+
+    # Generate server keypair
+    priv, pub = gen_keypair()
+    rprint(f"\nServer public key: [cyan]{pub}[/cyan]")
+
+    init_server_config(
+        wg_interface=wg_interface,
+        wg_dir=wg_dir,
+        subnet=cfg["subnet"],
+        port=cfg["server_port"],
+        private_key=priv,
+        outbound_iface=outbound_iface,
+        masquerade=masquerade,
+    )
+    rprint(f"[green]{server_conf} written.[/green]")
+
+    if click.confirm(f"\nBring up {wg_interface} now?", default=True):
+        _require_wg()
+        run(["wg-quick", "up", wg_interface])
+        rprint(f"[green]{wg_interface} is up.[/green]")
 
 
 @cli.command()
