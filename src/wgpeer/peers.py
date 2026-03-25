@@ -166,19 +166,25 @@ def list_peers() -> None:
         if len(parts) >= 2:
             pub_to_ip[parts[0]] = parts[1].split("/")[0]
 
+    # Build a map of pubkey -> name from peer .conf files, skipping the interface config
+    pub_to_name: dict[str, str] = {}
+    for conf_file in sorted(wg_dir.glob("*.conf"), key=lambda p: p.stem):
+        if conf_file.stem == cfg["wg_interface"]:
+            continue
+        try:
+            pub = _pubkey_from_conf(conf_file)
+            pub_to_name[pub] = conf_file.stem
+        except SystemExit:
+            pass
+
     table = Table(title="WireGuard Peers")
     table.add_column("Name", style="cyan")
     table.add_column("IP", style="magenta")
     table.add_column("Public Key", style="yellow")
 
-    for conf_file in sorted(wg_dir.glob("*.conf")):
-        peer_name = conf_file.stem
-        try:
-            pub = _pubkey_from_conf(conf_file)
-        except SystemExit:
-            pub = "unknown"
-        ip = pub_to_ip.get(pub, "not active")
-        table.add_row(peer_name, ip, pub)
+    for pub, ip in sorted(pub_to_ip.items(), key=lambda x: x[1]):
+        name = pub_to_name.get(pub, "[dim]no config[/dim]")
+        table.add_row(name, ip, pub)
 
     from rich import get_console
 

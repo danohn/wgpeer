@@ -243,6 +243,39 @@ class TestListPeers:
             list_peers()
         mock_console.return_value.print.assert_called_once()
 
+    def test_skips_interface_conf_file(self):
+        wg_output = "PUBKEYAAA\t10.0.0.2/32\n"
+        proc = make_proc(stdout=wg_output)
+        # wg0.conf should be skipped; only alice.conf should be considered
+        wg0_conf = MagicMock(stem="wg0")
+        alice_conf = MagicMock(stem="alice")
+
+        with (
+            patch("wgpeer.peers.load_config", return_value=SAMPLE_CFG),
+            patch("subprocess.run", return_value=proc),
+            patch("pathlib.Path.glob", return_value=[wg0_conf, alice_conf]),
+            patch("wgpeer.peers._pubkey_from_conf", return_value="PUBKEYAAA"),
+            patch("rich.get_console") as mock_console,
+        ):
+            list_peers()
+        # _pubkey_from_conf should only be called for alice, not wg0
+        table = mock_console.return_value.print.call_args[0][0]
+        assert wg0_conf.stem not in str(table.columns)
+
+    def test_shows_peers_without_conf_as_no_config(self):
+        wg_output = "PUBKEYORPHAN\t10.0.0.5/32\n"
+        proc = make_proc(stdout=wg_output)
+
+        with (
+            patch("wgpeer.peers.load_config", return_value=SAMPLE_CFG),
+            patch("subprocess.run", return_value=proc),
+            patch("pathlib.Path.glob", return_value=[]),
+            patch("rich.get_console"),
+            patch("rich.table.Table.add_row") as mock_add_row,
+        ):
+            list_peers()
+        assert any("no config" in str(c) for c in mock_add_row.call_args_list)
+
     def test_exits_on_wg_failure(self):
         proc = make_proc(returncode=1)
         with (
