@@ -20,7 +20,7 @@ SAMPLE_CFG = {
     "server_port": 51820,
     "wg_interface": "wg0",
     "wg_dir": "/etc/wireguard",
-    "subnet": "10.0.0",
+    "subnet": "10.0.0.0/24",
     "dns": "10.0.0.1",
     "keepalive": 25,
 }

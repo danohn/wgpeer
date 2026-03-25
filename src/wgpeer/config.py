@@ -19,7 +19,7 @@ DEFAULTS: dict = {
     "server_port": 51820,
     "wg_interface": "wg0",
     "wg_dir": "/etc/wireguard",
-    "subnet": "10.0.0",
+    "subnet": "10.0.0.0/24",
     "dns": "10.0.0.1",
     "keepalive": 25,
 }
@@ -52,7 +52,7 @@ def init_config(server_ip: str) -> None:
         f"server_port = {DEFAULTS['server_port']}",
         f'wg_interface = "{DEFAULTS["wg_interface"]}"',
         f'wg_dir = "{DEFAULTS["wg_dir"]}"',
-        f'subnet = "{DEFAULTS["subnet"]}"',
+        f'subnet = "{DEFAULTS["subnet"]}"',  # CIDR notation e.g. 10.0.0.0/24
         f'dns = "{DEFAULTS["dns"]}"',
         f"keepalive = {DEFAULTS['keepalive']}",
     ]
@@ -100,11 +100,13 @@ def render_client_config(
     cfg: dict,
 ) -> str:
     """Render the client WireGuard config from the Jinja2 template."""
+    network = ipaddress.IPv4Network(cfg["subnet"], strict=False)
     env, template_name = _make_env()
     tmpl = env.get_template(template_name)
     return tmpl.render(
         private_key=private_key,
         ip=ip,
+        prefix=network.prefixlen,
         dns=cfg["dns"],
         server_pub=server_pub,
         server_ip=cfg["server_ip"],

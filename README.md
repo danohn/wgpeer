@@ -42,7 +42,7 @@ server_ip = "1.2.3.4"
 server_port = 51820
 wg_interface = "wg0"
 wg_dir = "/etc/wireguard"
-subnet = "10.0.0"
+subnet = "10.0.0.0/24"
 dns = "10.0.0.1"
 keepalive = 25
 ```

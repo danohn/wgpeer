@@ -43,6 +43,7 @@ class TestRenderClientConfig:
         "server_port": 51820,
         "dns": "10.0.0.1",
         "keepalive": 25,
+        "subnet": "10.0.0.0/24",
     }
 
     def _render(self, **kwargs):
@@ -61,9 +62,17 @@ class TestRenderClientConfig:
         out = self._render(private_key="MYPRIVKEY")
         assert "MYPRIVKEY" in out
 
-    def test_contains_ip_address(self):
+    def test_contains_ip_address_with_prefix(self):
         out = self._render(ip="10.0.0.5")
         assert "10.0.0.5/24" in out
+
+    def test_prefix_derived_from_subnet(self):
+        cfg = {**self.CFG, "subnet": "10.0.0.0/16"}
+        with patch.object(Path, "exists", return_value=False):
+            out = render_client_config(
+                private_key="PRIV", ip="10.0.0.2", server_pub="PUB", cfg=cfg
+            )
+        assert "10.0.0.2/16" in out
 
     def test_contains_server_public_key(self):
         out = self._render(server_pub="SERVERPUB")

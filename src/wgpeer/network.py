@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import subprocess
 
 
@@ -24,31 +25,44 @@ def _get_allowed_ips(interface: str = "wg0") -> list[str]:
     return ips
 
 
-def next_ip(subnet: str = "10.0.0", interface: str = "wg0") -> str:
+def next_ip(subnet: str = "10.0.0.0/24", interface: str = "wg0") -> str:
     """Return the next available peer IP in the given subnet.
 
     Reads current allocations from the WireGuard interface and returns
-    the next free address after the highest last octet found.
-    Falls back to <subnet>.2 if no peers exist.
+    the next free address after the highest allocated host. Falls back
+    to the second host in the subnet (e.g. 10.0.0.2) if no peers exist,
+    reserving the first host for the server/gateway.
     """
+    network = ipaddress.IPv4Network(subnet, strict=False)
     existing = _get_allowed_ips(interface)
 
-    last_octets: list[int] = []
-    for ip in existing:
-        if ip.startswith(subnet + "."):
-            try:
-                last_octets.append(int(ip.split(".")[-1]))
-            except ValueError:
-                pass
+    allocated: list[ipaddress.IPv4Address] = []
+    for raw in existing:
+        try:
+            addr = ipaddress.IPv4Address(raw)
+        except ValueError:
+            continue
+        if addr in network:
+            allocated.append(addr)
 
-    if not last_octets:
-        return f"{subnet}.2"
-
-    highest = max(last_octets)
-    if highest >= 254:
+    hosts = list(network.hosts())  # excludes network and broadcast addresses
+    if len(hosts) < 2:
         from rich import print as rprint
 
-        rprint(f"[red]Subnet {subnet}.0/24 is full (no addresses left)[/red]")
+        rprint(f"[red]Subnet {subnet} is too small to assign peer addresses.[/red]")
         raise SystemExit(1)
 
-    return f"{subnet}.{highest + 1}"
+    # Reserve the first host for the server/gateway
+    if not allocated:
+        return str(hosts[1])
+
+    highest = max(allocated)
+    next_addr = highest + 1
+
+    if next_addr not in network or next_addr == network.broadcast_address:
+        from rich import print as rprint
+
+        rprint(f"[red]Subnet {subnet} is full (no addresses left).[/red]")
+        raise SystemExit(1)
+
+    return str(next_addr)

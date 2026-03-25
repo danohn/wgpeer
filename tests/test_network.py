@@ -51,7 +51,7 @@ class TestGetAllowedIps:
 
 
 class TestNextIp:
-    def test_falls_back_to_dot_two_when_no_peers(self):
+    def test_falls_back_to_second_host_when_no_peers(self):
         proc = make_proc(stdout="")
         with patch("subprocess.run", return_value=proc):
             ip = next_ip()
@@ -63,7 +63,7 @@ class TestNextIp:
             ip = next_ip()
         assert ip == "10.0.0.2"
 
-    def test_increments_highest_octet(self):
+    def test_increments_highest_address(self):
         proc = make_proc(stdout=WG_OUTPUT_TWO_PEERS)
         with patch("subprocess.run", return_value=proc):
             ip = next_ip()
@@ -75,16 +75,16 @@ class TestNextIp:
             ip = next_ip()
         assert ip == "10.0.0.11"
 
-    def test_custom_subnet(self):
+    def test_custom_subnet_cidr(self):
         proc = make_proc(stdout="pubkey\t192.168.1.5/32\n")
         with patch("subprocess.run", return_value=proc):
-            ip = next_ip(subnet="192.168.1")
+            ip = next_ip(subnet="192.168.1.0/24")
         assert ip == "192.168.1.6"
 
     def test_ignores_ips_from_different_subnet(self):
         proc = make_proc(stdout="pubkey\t172.16.0.5/32\n")
         with patch("subprocess.run", return_value=proc):
-            ip = next_ip(subnet="10.0.0")
+            ip = next_ip(subnet="10.0.0.0/24")
         assert ip == "10.0.0.2"
 
     def test_exits_when_subnet_full(self):
@@ -99,3 +99,9 @@ class TestNextIp:
         with patch("subprocess.run", return_value=proc):
             with pytest.raises(SystemExit):
                 next_ip()
+
+    def test_exits_when_subnet_too_small(self):
+        proc = make_proc(stdout="")
+        with patch("subprocess.run", return_value=proc):
+            with pytest.raises(SystemExit):
+                next_ip(subnet="10.0.0.1/32")
