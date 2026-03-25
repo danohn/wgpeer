@@ -6,7 +6,20 @@ on:
       - "v*"
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv run pytest
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
