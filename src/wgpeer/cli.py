@@ -35,7 +35,7 @@ def _require_wg() -> None:
 
 @click.group()
 def cli() -> None:
-    """Manage WireGuard peers on a Debian VPS."""
+    """Manage WireGuard peers."""
 
 
 @cli.command()

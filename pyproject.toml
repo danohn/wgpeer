@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "wgpeer"
 dynamic = ["version"]
-description = "Manage WireGuard peers on a Debian VPS"
+description = "Manage WireGuard peers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

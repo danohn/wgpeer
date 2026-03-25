@@ -1,6 +1,6 @@
 # wgpeer
 
-Manage WireGuard peers on a Debian 12 VPS.
+Manage WireGuard peers.
 
 ## Installation
 
