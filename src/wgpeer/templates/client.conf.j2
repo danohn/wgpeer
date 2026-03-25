@@ -1,0 +1,10 @@
+[Interface]
+PrivateKey = {{ private_key }}
+Address = {{ ip }}/24
+DNS = {{ dns }}
+
+[Peer]
+PublicKey = {{ server_pub }}
+Endpoint = {{ server_ip }}:{{ port }}
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = {{ keepalive }}
